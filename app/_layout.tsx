@@ -12,6 +12,7 @@ export const useAuth = () => useContext(AuthContext)!;
 
 export default function RootLayout() {
   const [loggedIn, setLoggedIn] = useState(false);
+  const initialRoute = loggedIn ? "(tabs)" : "(auth)/firstpage";
 
   return (
     <AuthContext.Provider
@@ -21,15 +22,11 @@ export default function RootLayout() {
         logout: () => setLoggedIn(false),
       }}
     >
-      <Stack screenOptions={{ headerShown: false }}>
-        {loggedIn ? (
-          <Stack.Screen name="(tabs)" />
-        ) : (
-          <>
-            <Stack.Screen name="(auth)/login" />
-            <Stack.Screen name="(auth)/signup" />
-          </>
-        )}
+      <Stack screenOptions={{ headerShown: false }} initialRouteName={initialRoute}>
+        <Stack.Screen name="(auth)/firstpage" />
+        <Stack.Screen name="(auth)/login" />
+        <Stack.Screen name="(auth)/signup" />
+        <Stack.Screen name="(tabs)" />
       </Stack>
     </AuthContext.Provider>
   );
