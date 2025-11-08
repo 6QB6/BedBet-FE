@@ -1,7 +1,7 @@
 import { View, Text, TextInput, StyleSheet, Pressable } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 type StepKey = "name" | "contact" | "payment";
 const STEPS: StepKey[] = ["name", "contact", "payment"];
@@ -10,6 +10,31 @@ export default function SignUp() {
   const router = useRouter();
   const [stepIndex, setStepIndex] = useState(0);
   const step = STEPS[stepIndex];
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [bank, setBank] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+
+  const isCurrentStepComplete = useMemo(() => {
+    switch (step) {
+      case "name":
+        return name.trim().length > 0;
+      case "contact":
+        return (
+          email.trim().length > 0 &&
+          code.trim().length > 0 &&
+          password.trim().length > 0 &&
+          password === passwordConfirm
+        );
+      case "payment":
+        return bank.trim().length > 0 && accountNumber.trim().length > 0;
+      default:
+        return false;
+    }
+  }, [step, name, email, code, password, passwordConfirm, bank, accountNumber]);
 
   const goBack = () => {
     if (stepIndex === 0) {
@@ -20,6 +45,9 @@ export default function SignUp() {
   };
 
   const goNext = () => {
+    if (!isCurrentStepComplete) {
+      return;
+    }
     if (stepIndex === STEPS.length - 1) {
       router.back();
       return;
@@ -46,7 +74,27 @@ export default function SignUp() {
 
       {/* 본문 콘텐츠 */}
       <View style={styles.content}>
-        {step === "name" ? <NameStep /> : step === "contact" ? <ContactStep /> : <PaymentStep />}
+        {step === "name" ? (
+          <NameStep value={name} onChange={setName} />
+        ) : step === "contact" ? (
+          <ContactStep
+            email={email}
+            code={code}
+            password={password}
+            passwordConfirm={passwordConfirm}
+            onChangeEmail={setEmail}
+            onChangeCode={setCode}
+            onChangePassword={setPassword}
+            onChangePasswordConfirm={setPasswordConfirm}
+          />
+        ) : (
+          <PaymentStep
+            bank={bank}
+            accountNumber={accountNumber}
+            onChangeBank={setBank}
+            onChangeAccount={setAccountNumber}
+          />
+        )}
       </View>
 
       {/* 하단 네비게이션 */}
@@ -61,7 +109,11 @@ export default function SignUp() {
         </Pressable>
 
         <Pressable
-          style={[styles.footerButton, styles.nextButton]}
+          style={[
+            styles.footerButton,
+            styles.nextButton,
+            isCurrentStepComplete && styles.nextButtonActive,
+          ]}
           onPress={goNext}
         >
           <Text style={styles.footerButtonText}>
@@ -73,56 +125,148 @@ export default function SignUp() {
   );
 }
 
-function NameStep() {
+type NameStepProps = {
+  value: string;
+  onChange: (value: string) => void;
+};
+
+function NameStep({ value, onChange }: NameStepProps) {
   return (
     <View style={styles.stepCard}>
-      <View style={styles.inputRow}>
+      <View style={styles.inputBox}>
         <TextInput
           placeholder="이름"
           placeholderTextColor="#bdbdbd"
-          style={styles.rowInput}
+          style={styles.inputField}
+          value={value}
+          onChangeText={onChange}
         />
       </View>
     </View>
   );
 }
 
-function ContactStep() {
+type ContactStepProps = {
+  email: string;
+  code: string;
+  password: string;
+  passwordConfirm: string;
+  onChangeEmail: (value: string) => void;
+  onChangeCode: (value: string) => void;
+  onChangePassword: (value: string) => void;
+  onChangePasswordConfirm: (value: string) => void;
+};
+
+function ContactStep({
+  email,
+  code,
+  password,
+  passwordConfirm,
+  onChangeEmail,
+  onChangeCode,
+  onChangePassword,
+  onChangePasswordConfirm,
+}: ContactStepProps) {
+  const emailActive = email.trim().length > 0;
+  const codeActive = code.trim().length > 0;
+
   return (
     <View style={styles.stepCard}>
-      <View style={styles.inputRow}>
+      <View style={styles.inputBox}>
         <TextInput
           placeholder="이메일 ex) @gmail.com"
           placeholderTextColor="#bdbdbd"
-          style={styles.rowInput}
+          style={styles.inputField}
+          value={email}
+          onChangeText={onChangeEmail}
         />
-        <Pressable style={styles.inlineButton}>
+        <Pressable
+          style={[
+            styles.inlineButton,
+            emailActive && styles.inlineButtonActive,
+          ]}
+        >
           <Text style={styles.inlineButtonText}>코드 전송</Text>
         </Pressable>
       </View>
 
-      <View style={styles.inputRow}>
+      <View style={styles.inputBox}>
         <TextInput
           placeholder="코드 입력"
           placeholderTextColor="#bdbdbd"
-          style={styles.rowInput}
+          style={styles.inputField}
+          value={code}
+          onChangeText={onChangeCode}
         />
-        <Pressable style={styles.inlineButton}>
+        <Pressable
+          style={[
+            styles.inlineButton,
+            codeActive && styles.inlineButtonActive,
+          ]}
+        >
           <Text style={styles.inlineButtonText}>인증</Text>
         </Pressable>
       </View>
 
-      <TextInput placeholder="비밀번호" secureTextEntry style={styles.singleInput} />
-      <TextInput placeholder="비밀번호 확인" secureTextEntry style={styles.singleInput} />
+      <View style={styles.inputBox}>
+        <TextInput
+          placeholder="비밀번호"
+          placeholderTextColor="#bdbdbd"
+          secureTextEntry
+          style={styles.inputField}
+          value={password}
+          onChangeText={onChangePassword}
+        />
+      </View>
+
+      <View style={styles.inputBox}>
+        <TextInput
+          placeholder="비밀번호 확인"
+          placeholderTextColor="#bdbdbd"
+          secureTextEntry
+          style={styles.inputField}
+          value={passwordConfirm}
+          onChangeText={onChangePasswordConfirm}
+        />
+      </View>
     </View>
   );
 }
 
-function PaymentStep() {
+type PaymentStepProps = {
+  bank: string;
+  accountNumber: string;
+  onChangeBank: (value: string) => void;
+  onChangeAccount: (value: string) => void;
+};
+
+function PaymentStep({
+  bank,
+  accountNumber,
+  onChangeBank,
+  onChangeAccount,
+}: PaymentStepProps) {
   return (
     <View style={styles.stepCard}>
-      <TextInput placeholder="은행명" style={styles.singleInput} />
-      <TextInput placeholder="계좌번호" style={styles.singleInput} />
+      <View style={styles.inputBox}>
+        <TextInput
+          placeholder="은행명"
+          placeholderTextColor="#bdbdbd"
+          style={styles.inputField}
+          value={bank}
+          onChangeText={onChangeBank}
+        />
+      </View>
+      <View style={styles.inputBox}>
+        <TextInput
+          placeholder="계좌번호"
+          placeholderTextColor="#bdbdbd"
+          style={styles.inputField}
+          value={accountNumber}
+          onChangeText={onChangeAccount}
+          keyboardType="number-pad"
+        />
+      </View>
     </View>
   );
 }
@@ -165,57 +309,49 @@ const styles = StyleSheet.create({
   },
   stepCard: {
     gap: 20,
-    backgroundColor: "#ffffff",
   },
-  inputRow: {
+
+  /** ✅ 통일된 입력칸 스타일 */
+  inputBox: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    backgroundColor: "#ffffff",
-    borderRadius: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    backgroundColor: "#fff",
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "#f1f1f1",
+    borderColor: "#eeeeee",
+    height: 56,
+    paddingHorizontal: 10,
     shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 0 },
     elevation: 2,
   },
-  rowInput: {
+  inputField: {
     flex: 1,
     fontSize: 16,
     color: "#1f1f1f",
-    paddingVertical: 2,
   },
+
   inlineButton: {
-    marginLeft: 16,
+    marginLeft: 12,
     backgroundColor: "#FFE8AE",
-    paddingVertical: 10,
     borderRadius: 12,
-    minWidth: 96,
+    height: 40,
+    minWidth: 84,
     alignItems: "center",
+    justifyContent: "center",
+  },
+  /** ✅ 입력 시 진한 노란색으로 변경 */
+  inlineButtonActive: {
+    backgroundColor: "#FEDF89",
   },
   inlineButtonText: {
     color: "#1f1f1f",
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "500",
   },
-  singleInput: {
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#eeeeee",
-    paddingHorizontal: 18,
-    paddingVertical: 16,
-    fontSize: 16,
-    backgroundColor: "#ffffff",
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
-  },
+
   footer: {
     flexDirection: "row",
     gap: 12,
@@ -235,9 +371,12 @@ const styles = StyleSheet.create({
   nextButton: {
     backgroundColor: "#FEE9A8",
   },
+  nextButtonActive: {
+    backgroundColor: "#FEDF89",
+  },
   footerButtonText: {
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "500",
     color: "#1f1f1f",
   },
   prevButtonText: {
