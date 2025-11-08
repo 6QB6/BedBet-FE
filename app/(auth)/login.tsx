@@ -9,6 +9,7 @@ export default function Login() {
       <Text style={styles.title}>로그인</Text>
 
       <TextInput placeholder="이메일" style={styles.input} />
+      <Button title="코드전송" onPress={() => {}} />
       <TextInput placeholder="비밀번호" secureTextEntry style={styles.input} />
 
       <Button title="로그인" onPress={login} />
