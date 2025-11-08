@@ -1,9 +1,25 @@
-import { View, Text, TextInput, StyleSheet, Pressable } from "react-native";
+import { View, Text, TextInput, StyleSheet, Pressable, Platform } from "react-native";
 import { Link } from "expo-router";
 import { useAuth } from "../_layout";
+import { useMemo, useState } from "react";
 
 export default function Login() {
   const { login } = useAuth();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const isFormFilled = useMemo(
+    () => email.trim().length > 0 && password.trim().length > 0,
+    [email, password]
+  );
+
+  const handleLogin = () => {
+    if (!isFormFilled) {
+      return;
+    }
+    login();
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.inputRow}>
@@ -12,7 +28,13 @@ export default function Login() {
           placeholder="ex) @gmail.com"
           placeholderTextColor="#c5c5c5"
           keyboardType="email-address"
-          style={styles.rowInput}
+          style={[
+            styles.rowInput,
+            Platform.OS === "web" && styles.rowInputWeb,
+          ]}
+          underlineColorAndroid="transparent"
+          value={email}
+          onChangeText={setEmail}
         />
       </View>
 
@@ -21,12 +43,23 @@ export default function Login() {
         <TextInput
           placeholder=""
           secureTextEntry
-          style={styles.rowInput}
+          style={[
+            styles.rowInput,
+            Platform.OS === "web" && styles.rowInputWeb,
+          ]}
+          underlineColorAndroid="transparent"
+          value={password}
+          onChangeText={setPassword}
         />
       </View>
 
-      <Pressable style={styles.button} onPress={login}>
-        <Text style={styles.buttonText}>로그인</Text>
+      <Pressable
+        style={[styles.button, isFormFilled && styles.buttonActive]}
+        onPress={handleLogin}
+      >
+        <Text style={[styles.buttonText]}>
+          로그인
+        </Text>
       </Pressable>
 
       <Link href="/(auth)/signup" style={styles.link}>
@@ -67,15 +100,23 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     borderWidth: 0,
   },
-  link: { marginTop: 8, textAlign: "center", color: "#9c9c9c" },
+  rowInputWeb: {
+    outlineStyle: "none",
+    outlineWidth: 0,
+    borderWidth: 0,
+  } as any,
+  link: { marginTop: 4, textAlign: "center", color: "#9c9c9c" },
 
   button: {
-    backgroundColor: "#FEDF89",
+    backgroundColor: "#FEF0C7",
     height: 56,
     borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
     marginTop: 12,
   },
-  buttonText: { color: "#1a1a1a", fontSize: 16, fontWeight: "regular" },
+  buttonActive: {
+    backgroundColor: "#FEDF89",
+  },
+  buttonText: { color: "black", fontSize: 16, fontWeight: "regular" },
 });
