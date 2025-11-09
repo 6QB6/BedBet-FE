@@ -11,16 +11,39 @@ import {
   TextInput,
   View,
 } from "react-native";
+import {
+  API_BASE,
+  getAuthHeaders,
+  ensureTokenOrThrow,
+  fetchJson,
+} from "../../auth";
+
+// ======================= API 타입/유틸 =======================
+type ApiTeam = {
+  name: string;
+  teamUid: string;
+  ownerUid: string;
+  challenge_start_at: string; // ISO
+  challenge_end_at: string; // ISO
+  created_at: string;
+  teammates: { userUid: string; coin: number }[];
+  bet_coins: number;
+};
+
+type TeamListResponse = {
+  status_code: number; // 201
+  message: string;
+  teams: ApiTeam[];
+};
 
 type Room = {
-  id: string;
-  startTime: string; // ISO
+  id: string; // teamUid
+  startTime: string; // ISO(+09:00로 표기되는 문자열 가능)
   endTime: string; // ISO
   participants: number;
   totalCoin: number;
+  name: string;
 };
-
-const API_BASE = process.env.EXPO_PUBLIC_API ?? "https://bedbet.knpu.re.kr/api";
 
 // 00:00 ~ 23:30 30분 단위
 const HALF_HOUR_SLOTS = Array.from({ length: 48 }, (_, i) => {
@@ -32,6 +55,8 @@ const timeToIndex = (hhmm: string) => {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 2 + (m >= 30 ? 1 : 0);
 };
+
+// 화면 표기에 사용 (단순 HH:mm)
 const fmtRange = (startISO: string, endISO: string) => {
   const s = new Date(startISO);
   const e = new Date(endISO);
@@ -41,9 +66,14 @@ const fmtRange = (startISO: string, endISO: string) => {
   const eM = String(e.getMinutes()).padStart(2, "0");
   return `${sH}:${sM} ~ ${eH}:${eM}`;
 };
-// idx(0~47)을 오늘/내일로 ISO로 변환 (종료가 시작보다 작으면 다음날로 간주)
-function isoFromIdxPair(startIdx: number, endIdx: number) {
+
+/** idx(0~47)을 KST 기준 ISO 문자열(+09:00)로 변환
+ *  - 종료가 시작보다 작거나 같으면 다음날로 간주
+ *  - 서버의 "KST 30분 경계" 체크를 확실히 통과하도록 오프셋 표기를 +09:00로 명시
+ */
+function isoKSTFromIdxPair(startIdx: number, endIdx: number) {
   const now = new Date();
+  // 오늘 날짜(로컬) 00:00 기준
   const base = new Date(
     now.getFullYear(),
     now.getMonth(),
@@ -53,17 +83,37 @@ function isoFromIdxPair(startIdx: number, endIdx: number) {
     0,
     0
   );
+
+  // 날짜/시간 계산 (로컬)
   const s = new Date(base);
   s.setMinutes(startIdx * 30);
   const e = new Date(base);
   e.setMinutes(endIdx * 30);
   if (endIdx <= startIdx) {
-    // 다음날 새벽으로 넘어가는 케이스
     e.setDate(e.getDate() + 1);
   }
-  return { startISO: s.toISOString(), endISO: e.toISOString() };
+
+  // YYYY-MM-DDTHH:mm:SS.mmm+09:00 형식 만들기
+  const pad = (n: number, len = 2) => String(n).padStart(len, "0");
+  const fmt = (d: Date) =>
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:00.000+09:00`;
+  return { startISO: fmt(s), endISO: fmt(e) };
 }
 
+/** team/list → Room[] 매핑 */
+function mapTeamsToRooms(res: TeamListResponse): Room[] {
+  return (res.teams ?? []).map((t) => ({
+    id: t.teamUid,
+    name: t.name,
+    startTime: t.challenge_start_at,
+    endTime: t.challenge_end_at,
+    participants: t.teammates?.length ?? 0,
+    totalCoin: t.bet_coins ?? 0,
+  }));
+}
+
+// ======================= 컴포넌트 =======================
 export default function Home() {
   // ───────── 필터(조회만) ─────────
   const [sleepIdx, setSleepIdx] = useState<number | null>(null);
@@ -97,16 +147,18 @@ export default function Home() {
     });
   }, [rooms, sleepIdx, wakeIdx]);
 
+  // ======================= API 연동 부분 =======================
   async function fetchRooms() {
     try {
       setError(null);
       setLoading(true);
-      const res = await fetch(`${API_BASE}/rooms`, {
-        headers: { "Content-Type": "application/json" },
+      // 토큰 필요: 없으면 에러
+      await ensureTokenOrThrow();
+      const json = await fetchJson<TeamListResponse>(`${API_BASE}/team/list`, {
+        method: "POST",
+        headers: await getAuthHeaders(),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = (await res.json()) as Room[];
-      setRooms(json);
+      setRooms(mapTeamsToRooms(json));
     } catch (e: any) {
       setError(e?.message ?? "failed to load");
     } finally {
@@ -130,16 +182,17 @@ export default function Home() {
     setJoinOpen(true);
   };
 
+  /** 팀 참가: POST team/join  { teamUid, coin } */
   const confirmJoin = async () => {
     const coin = Math.max(0, Math.min(500, Number(bet) || 0));
     try {
       if (!joinTarget) return;
-      const res = await fetch(`${API_BASE}/rooms/${joinTarget.id}/bet`, {
+      await ensureTokenOrThrow();
+      await fetchJson(`${API_BASE}/team/join`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ coinStaked: coin }),
+        headers: await getAuthHeaders(),
+        body: JSON.stringify({ teamUid: joinTarget.id, coin }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setJoinOpen(false);
       setJoinTarget(null);
       await fetchRooms();
@@ -155,22 +208,34 @@ export default function Home() {
     setCreateOpen(true);
   };
 
+  /** 팀 생성: POST team/create
+   *  BODY: { name, challenge_start_at, challenge_end_at, coin }
+   *  - 시간은 KST 30분 경계(+09:00)로 전송
+   */
   const confirmCreate = async () => {
-    // 검증
     if (createStartIdx === null || createEndIdx === null) return;
     const coin = Math.max(0, Math.min(500, Number(createBet) || 0));
-    const { startISO, endISO } = isoFromIdxPair(createStartIdx, createEndIdx);
+
+    const { startISO, endISO } = isoKSTFromIdxPair(
+      createStartIdx,
+      createEndIdx
+    );
+
+    // 팀 이름 간단 생성 (중복 방지용 타임스탬프)
+    const name = `room_${startISO.slice(11, 16)}_${endISO.slice(11, 16)}_${Date.now()}`;
+
     try {
-      const res = await fetch(`${API_BASE}/rooms`, {
+      await ensureTokenOrThrow();
+      await fetchJson(`${API_BASE}/team/create`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await getAuthHeaders(),
         body: JSON.stringify({
-          startTime: startISO,
-          endTime: endISO,
-          initialBetCoin: coin, // 서버 스펙에 맞춰 필드명 조정
+          name,
+          challenge_start_at: startISO, // KST 30분 경계(+09:00) 포맷 권장
+          challenge_end_at: endISO,
+          coin,
         }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setCreateOpen(false);
       await fetchRooms();
     } catch (e: any) {
@@ -178,6 +243,7 @@ export default function Home() {
     }
   };
 
+  // ======================= UI =======================
   return (
     <SafeAreaView style={styles.safe}>
       {/* 헤더 */}
@@ -251,12 +317,12 @@ export default function Home() {
         />
       )}
 
-      {/* ───────── 플로팅 추가 버튼 (방 생성) ───────── */}
+      {/* 플로팅 추가 버튼 (방 생성) */}
       <Pressable style={styles.fab} onPress={openCreate}>
         <Text style={styles.fabPlus}>＋</Text>
       </Pressable>
 
-      {/* ───────── 필터 모달 ───────── */}
+      {/* 필터 모달 */}
       <Modal visible={filterOpen} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalBox}>
@@ -336,7 +402,7 @@ export default function Home() {
         </View>
       </Modal>
 
-      {/* ───────── 참가 모달 ───────── */}
+      {/* 참가 모달 */}
       <Modal visible={joinOpen} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalBox}>
@@ -381,7 +447,7 @@ export default function Home() {
         </View>
       </Modal>
 
-      {/* ───────── 방 생성 모달 ───────── */}
+      {/* 방 생성 모달 */}
       <Modal visible={createOpen} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
           <View style={styles.modalBox}>

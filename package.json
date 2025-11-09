@@ -45,8 +45,12 @@
   },
   "devDependencies": {
     "@types/react": "^19.2.2",
+    "cors": "^2.8.5",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "expo-module-scripts": "^5.0.7",
+    "express": "^5.1.0",
+    "http-proxy-middleware": "^3.0.5",
     "typescript": "~5.9.2"
   }
 }
