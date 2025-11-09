@@ -3,15 +3,35 @@ import type { ViewStyle, TextStyle } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../_layout";
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation } from '@react-navigation/native'; 
+import { clearToken } from "@/auth";
+import { StackNavigationProp } from '@react-navigation/stack'; // StackNavigationProp 추가
+import { RootStackParamList } from '../navigation/types'; // 타입 정의 가져오기
+
+type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Profile'>;
 
 export default function Profile() {
   const { logout, user } = useAuth(); // user = { name, email, bankAccount }
+  const navigation = useNavigation<ProfileScreenNavigationProp>(); // navigation 객체 가져오기
 
   // 안전 처리
   const name = user?.name ?? "홍길동";
   const email = user?.email ?? "email@example.com";
   const bank = user?.bank ?? "우리";
   const account = user?.account_number ?? "000000000000";
+
+  const handleLogout = async () => {
+    try {
+      // SecureStore에서 accessToken 삭제
+      await clearToken();
+      // 로그아웃 처리
+      logout();
+      // 로그인 페이지로 이동
+      navigation.navigate('Login'); // 'Login'은 로그인 페이지의 이름입니다. 실제 페이지 이름으로 변경하세요.
+    } catch (error) {
+      console.error("로그아웃 중 오류 발생:", error);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -48,7 +68,7 @@ export default function Profile() {
         </View>
 
         {/* 로그아웃 / 회원탈퇴 (그대로) */}
-        <Pressable onPress={logout} style={styles.item}>
+        <Pressable onPress={handleLogout} style={styles.item}>
           <Text style={styles.itemText}>로그아웃</Text>
         </Pressable>
 
@@ -100,7 +120,7 @@ const styles = StyleSheet.create<{
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    marginTop: -10,          // 헤더와 자연스럽게 맞닿아 라운드가 보이도록
+    marginTop: -10, // 헤더와 자연스럽게 맞닿아 라운드가 보이도록
     paddingTop: 12,
     paddingHorizontal: 16,
   },

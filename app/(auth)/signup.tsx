@@ -11,8 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { useMemo, useState } from "react";
 import { useAuth } from "../_layout";
-
-const API_BASE = "https://bedbet.knpu.re.kr/api";
+import { API_BASE } from "@/auth";
 
 type StepKey = "name" | "contact" | "payment";
 const STEPS: StepKey[] = ["name", "contact", "payment"];

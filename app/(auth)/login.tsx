@@ -10,9 +10,7 @@ import {
 import { Link, router } from "expo-router";
 import { useAuth } from "../_layout";
 import { useMemo, useState } from "react";
-import { saveToken } from "../../auth";
-
-const API_BASE = "https://bedbet.knpu.re.kr/api";
+import { saveToken, API_BASE } from "../../auth";
 
 export default function Login() {
   const { login } = useAuth();
@@ -20,7 +18,7 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
+  
   const isFormFilled = useMemo(
     () => email.trim().length > 0 && password.trim().length > 0,
     [email, password]
