@@ -1,21 +1,96 @@
-import { View, Text, StyleSheet, Pressable } from "react-native";
+import { View, Text, StyleSheet, Pressable, Alert } from "react-native";
 import type { ViewStyle, TextStyle } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useAuth } from "../_layout";
 import { Ionicons } from "@expo/vector-icons";
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { clearToken, API_BASE, getAuthHeaders, ensureTokenOrThrow } from "@/auth";
+import { StackNavigationProp } from '@react-navigation/stack';
+import { RootStackParamList } from '../navigation/types';
+import { useCallback, useState } from "react";
+
+type ProfileScreenNavigationProp = StackNavigationProp<RootStackParamList, 'Profile'>;
+
+type UserInfo = {
+  userUid?: string;
+  email?: string;
+  name?: string;
+  account_number?: string;
+  coin?: number;
+  teamUid?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 export default function Profile() {
-  const { logout, user } = useAuth(); // user = { name, email, bankAccount }
+  const { logout, user } = useAuth();
+  const navigation = useNavigation<ProfileScreenNavigationProp>();
 
-  // 안전 처리
-  const name = user?.name ?? "홍길동";
-  const email = user?.email ?? "email@example.com";
-  const bank = user?.bank ?? "우리";
-  const account = user?.account_number ?? "000000000000";
+  const [profile, setProfile] = useState<UserInfo>({
+    name: user?.name ?? "홍길동",
+    email: user?.email ?? "email@example.com",
+    account_number: user?.account_number ?? "000000000000",
+    coin: typeof user?.coin === "number" ? user!.coin : 0,
+  });
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const handleLogout = async () => {
+    try {
+      await clearToken();
+      logout();
+      navigation.navigate('Login');
+    } catch (error) {
+      console.error("로그아웃 중 오류 발생:", error);
+      Alert.alert("오류", "로그아웃 중 오류가 발생했습니다.");
+    }
+  };
+
+  const fetchUserInfo = useCallback(async () => {
+    // 원하면 이 guard는 그냥 둬도 됨
+    if (loading) return;
+
+    setLoading(true);
+    setErr(null);
+    try {
+      await ensureTokenOrThrow();
+      const res = await fetch(`${API_BASE}/user/info`, {
+        method: "GET",
+        headers: await getAuthHeaders(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg =
+          typeof data?.message === "string"
+            ? data.message
+            : `조회 실패 (${res.status})`;
+        setErr(msg);
+        return;
+      }
+      if (data?.user) {
+        setProfile({
+          name: data.user.name,
+          email: data.user.email,
+          account_number: data.user.account_number,
+          coin: data.user.coin,
+        });
+      }
+    } catch (e: any) {
+      setErr(e?.message ?? "네트워크 오류");
+    } finally {
+      setLoading(false);
+    }
+  }, []); // ✅ loading 제거
+
+  // 화면이 포커스될 때마다 사용자 정보 갱신
+  useFocusEffect(
+    useCallback(() => {
+      fetchUserInfo();
+    }, [fetchUserInfo])
+  );
 
   return (
     <View style={styles.container}>
-      {/* 상단 헤더 (평평한 하단) */}
       <LinearGradient
         colors={["#FFE29F", "#FFA99F"]}
         start={{ x: 0, y: 0 }}
@@ -26,35 +101,42 @@ export default function Profile() {
         <Ionicons name="menu" size={28} color="#030202ff" />
       </LinearGradient>
 
-      {/* ✅ 가장 배경의 하얀 요소: 상단만 둥글게 */}
       <View style={styles.panel}>
-        {/* 프로필 카드 (원래대로 1개) */}
         <View style={styles.card}>
           <View style={styles.row}>
             <Ionicons name="person-outline" size={20} color="#555" />
-            <Text style={styles.cardText}>{name}</Text>
+            <Text style={styles.cardText}>{profile.name}</Text>
           </View>
 
           <View style={styles.row}>
             <Ionicons name="mail-outline" size={20} color="#555" />
-            <Text style={styles.cardText}>{email}</Text>
+            <Text style={styles.cardText}>{profile.email}</Text>
           </View>
 
           <View style={styles.row}>
             <Ionicons name="card-outline" size={20} color="#555" />
-            <Text style={styles.cardText}>{bank}</Text>
-            <Text style={styles.cardText}>{account}</Text>
+            <Text style={styles.cardText}>{profile.account_number}</Text>
           </View>
+
+          <View style={styles.row}>
+            <Ionicons name="cash-outline" size={20} color="#555" />
+            <Text style={styles.cardText}>코인: {typeof profile.coin === "number" ? profile.coin : "-"}</Text>
+            {loading && <Text style={[styles.cardText, { marginLeft: 8 }]}></Text>}
+          </View>
+
+          {!!err && (
+            <View style={{ marginTop: 8 }}>
+              <Text style={{ color: "crimson", fontSize: 13 }}>{err}</Text>
+            </View>
+          )}
         </View>
 
-        {/* 로그아웃 / 회원탈퇴 (그대로) */}
-        <Pressable onPress={logout} style={styles.item}>
+        <Pressable onPress={handleLogout} style={styles.item}>
           <Text style={styles.itemText}>로그아웃</Text>
         </Pressable>
 
         <Pressable
           onPress={() => {
-            // TODO: 회원탈퇴 API 연결
             alert("회원탈퇴 기능은 서버 연결 후 구현됩니다.");
           }}
           style={styles.item}
@@ -79,7 +161,6 @@ const styles = StyleSheet.create<{
 }>({
   container: { flex: 1, backgroundColor: "#FFF" },
 
-  // 헤더는 하단 라운드 없음 (평평)
   header: {
     paddingHorizontal: 20,
     paddingTop: 60,
@@ -94,18 +175,16 @@ const styles = StyleSheet.create<{
     color: "#333",
   },
 
-  // ✅ 화면의 “배경 하얀 패널” — 상단 둥근 모서리
   panel: {
     flex: 1,
     backgroundColor: "#FFFFFF",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    marginTop: -10,          // 헤더와 자연스럽게 맞닿아 라운드가 보이도록
+    marginTop: -10,
     paddingTop: 12,
     paddingHorizontal: 16,
   },
 
-  // 프로필 카드(원래처럼 한 장)
   card: {
     backgroundColor: "white",
     borderRadius: 16,

@@ -57,7 +57,7 @@ export default function WithdrawScreen() {
       {/* 예상 변환 */}
       <View style={styles.previewBox}>
         <Text style={styles.previewText}>예상 현금: <Text style={styles.previewStrong}>{cash.toLocaleString()} 원</Text></Text>
-        <Text style={styles.hint}>1코인 = 100원 (출금가)</Text>
+        <Text style={styles.hint}>1코인 = 110원 (출금가)</Text>
       </View>
 
       <TouchableOpacity style={[styles.primaryBtn, { marginTop: 12 }]} onPress={goConfirm} activeOpacity={0.9}>
