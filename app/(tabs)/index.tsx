@@ -21,6 +21,7 @@ import {
 import { useRouter } from "expo-router";
 import { useAuth } from "../_layout";
 
+
 // ======================= API 타입/유틸 =======================
 type ApiTeam = {
   name: string;
@@ -32,6 +33,15 @@ type ApiTeam = {
   teammates: { userUid: string; coin: number }[];
   bet_coins: number;
 };
+
+type MemberInfo = {
+  userUid: string;
+  name: string;
+  email: string;
+  account_number: string;
+  coin: number;
+};
+
 
 type TeamListResponse = {
   status_code: number; // 201
@@ -157,12 +167,102 @@ export default function Home() {
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinTarget, setJoinTarget] = useState<Room | null>(null);
   const [bet, setBet] = useState("0"); // 0~500
+  const [joinError, setJoinError] = useState<string | null>(null);
+
 
   // ───────── 방 생성(FAB) 모달 ─────────
   const [createOpen, setCreateOpen] = useState(false);
   const [createStartIdx, setCreateStartIdx] = useState<number | null>(null);
   const [createEndIdx, setCreateEndIdx] = useState<number | null>(null);
   const [createBet, setCreateBet] = useState("0"); // 초기 본인 베팅(옵션) 0~500
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailTeam, setDetailTeam] = useState<ApiTeam | null>(null);
+  const [detailMembers, setDetailMembers] = useState<MemberInfo[]>([]);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  
+  const openRoom = async (room: Room) => {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetailError(null);
+    setDetailTeam(null);
+    setDetailMembers([]);
+
+    try {
+      await ensureTokenOrThrow();
+      const headers = await getAuthHeaders();
+
+      // 1) 팀 정보 조회
+      const teamRes = await fetch(`${API_BASE}/team/info/${room.id}`, {
+        method: "GET",
+        headers,
+      });
+      const teamData = await teamRes.json().catch(() => ({} as any));
+
+      if (!teamRes.ok) {
+        let msg = "방 정보를 불러오지 못했습니다.";
+        const apiMsg =
+          typeof teamData?.detail?.message === "string"
+            ? teamData.detail.message
+            : typeof teamData?.message === "string"
+            ? teamData.message
+            : null;
+        if (apiMsg) msg = apiMsg;
+
+        setDetailError(msg);
+        return;
+      }
+
+      const team: ApiTeam = teamData.team;
+      setDetailTeam(team);
+
+      // 2) 참여자 정보 조회 (각 userUid별)
+      const members: MemberInfo[] = [];
+      for (const tm of team.teammates ?? []) {
+        try {
+          const uRes = await fetch(`${API_BASE}/user/info/${tm.userUid}`, {
+            method: "GET",
+            headers,
+          });
+          const uData = await uRes.json().catch(() => ({} as any));
+
+          if (uRes.ok && uData?.user) {
+            members.push({
+              userUid: tm.userUid,
+              name: uData.user.name,
+              email: uData.user.email,
+              account_number: uData.user.account_number,
+              coin: tm.coin,
+            });
+          } else {
+            members.push({
+              userUid: tm.userUid,
+              name: "알 수 없음",
+              email: "-",
+              account_number: "-",
+              coin: tm.coin,
+            });
+          }
+        } catch {
+          members.push({
+            userUid: tm.userUid,
+            name: "알 수 없음",
+            email: "-",
+            account_number: "-",
+            coin: tm.coin,
+          });
+        }
+      }
+
+      setDetailMembers(members);
+    } catch (e: any) {
+      setDetailError(e?.message ?? "네트워크 오류가 발생했습니다.");
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
 
   const filtered = useMemo(() => {
     if (sleepIdx === null || wakeIdx === null) return rooms;
@@ -215,23 +315,64 @@ export default function Home() {
   };
 
   /** 팀 참가: POST team/join  { teamUid, coin } */
-  const confirmJoin = async () => {
-    const coin = Math.max(0, Math.min(500, Number(bet) || 0));
-    try {
-      if (!joinTarget) return;
-      await ensureTokenOrThrow();
-      await fetchJson(`${API_BASE}/team/join`, {
-        method: "POST",
-        headers: await getAuthHeaders(),
-        body: JSON.stringify({ teamUid: joinTarget.id, coin }),
-      });
-      setJoinOpen(false);
-      setJoinTarget(null);
-      await fetchRooms();
-    } catch (e: any) {
-      setError(e?.message ?? "join failed");
+  /** 팀 참가: POST team/join  { teamUid, coin } */
+const confirmJoin = async () => {
+  const coin = Math.max(0, Math.min(500, Number(bet) || 0));
+
+  try {
+    if (!joinTarget) return;
+
+    await ensureTokenOrThrow();
+
+    const res = await fetch(`${API_BASE}/team/join`, {
+      method: "POST",
+      headers: await getAuthHeaders(),
+      body: JSON.stringify({ teamUid: joinTarget.id, coin }),
+    });
+
+    const data = await res.json().catch(() => ({} as any));
+
+    if (!res.ok) {
+      // ── 명세서에 따라 에러 메시지 꺼내기 ──
+      // { detail: { message: "..." } } 형태
+      let msg = "팀 참가에 실패했습니다.";
+
+      const apiMsg =
+        typeof data?.detail?.message === "string"
+          ? data.detail.message
+          : typeof data?.message === "string"
+          ? data.message
+          : null;
+
+      if (apiMsg) msg = apiMsg;
+
+      // 상태 코드에 따라(원하면 커스텀 메시지도 가능)
+      // switch (res.status) {
+      //   case 404:
+      //     msg = apiMsg || "팀 또는 유저를 찾을 수 없습니다.";
+      //     break;
+      //   case 409:
+      //     msg = apiMsg || "이미 이 팀에 가입되어 있습니다.";
+      //     break;
+      //   case 400:
+      //     msg = apiMsg || "다른 팀에 속해 있거나 코인이 부족합니다.";
+      //     break;
+      // }
+
+      setJoinError(msg); // ✅ 모달에 보여줄 메시지 설정
+      return;
     }
-  };
+
+    // 성공 (200)
+    // { "message": "Successfully joined team" }
+    setJoinOpen(false);
+    setJoinTarget(null);
+    await fetchRooms();
+  } catch (e: any) {
+    setJoinError(e?.message ?? "네트워크 오류가 발생했습니다.");
+  }
+};
+
 
   const openCreate = () => {
     setCreateStartIdx(null);
@@ -253,27 +394,45 @@ export default function Home() {
       createEndIdx
     );
 
-    // 팀 이름 간단 생성 (중복 방지용 타임스탬프)
     const name = `room_${startISO.slice(11, 16)}_${endISO.slice(11, 16)}_${Date.now()}`;
 
     try {
       await ensureTokenOrThrow();
-      await fetchJson(`${API_BASE}/team/create`, {
+
+      const res = await fetch(`${API_BASE}/team/create`, {
         method: "POST",
         headers: await getAuthHeaders(),
         body: JSON.stringify({
           name,
-          challenge_start_at: startISO, // KST 30분 경계(+09:00) 포맷 권장
+          challenge_start_at: startISO,
           challenge_end_at: endISO,
-          coin,
+          coin
         }),
       });
+
+
+      const data = await res.json().catch(() => ({} as any));
+
+      if (!res.ok) {
+        let msg = "팀 생성에 실패했습니다.";
+        const apiMsg =
+          typeof data?.detail?.message === "string"
+            ? data.detail.message
+            : typeof data?.message === "string"
+            ? data.message
+            : null;
+        if (apiMsg) msg = apiMsg;
+        setError(msg);
+        return;
+      }
+
       setCreateOpen(false);
       await fetchRooms();
     } catch (e: any) {
       setError(e?.message ?? "create failed");
     }
   };
+
 
   // ======================= UI =======================
   if (checkingToken) {
@@ -331,7 +490,7 @@ export default function Home() {
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
             }
             renderItem={({ item }) => (
-              <View style={styles.card}>
+              <Pressable style={styles.card} onPress={() => openRoom(item)}>
                 <View style={{ gap: 6 }}>
                   <Text style={styles.cardTime}>
                     {fmtRange(item.startTime, item.endTime)}
@@ -344,7 +503,7 @@ export default function Home() {
                 <Pressable style={styles.joinFab} onPress={() => openJoin(item)}>
                   <Text style={styles.joinFabText}>참가</Text>
                 </Pressable>
-              </View>
+              </Pressable>
             )}
             ListEmptyComponent={
               <View style={styles.center}>
@@ -584,6 +743,109 @@ export default function Home() {
                   <Text style={[styles.btnText, { color: "white" }]}>
                     방 생성
                   </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* 방 상세 모달 */}
+        <Modal visible={detailOpen} transparent animationType="fade">
+          <View style={styles.modalBackdrop}>
+            <View style={[styles.modalBox, { maxHeight: "80%" }]}>
+              <Text style={styles.modalTitle}>
+                {detailTeam?.name ?? "방 정보"}
+              </Text>
+
+              {detailLoading ? (
+                <View style={[styles.center, { paddingVertical: 20 }]}>
+                  <ActivityIndicator />
+                </View>
+              ) : detailError ? (
+                <Text style={[styles.modalSubtitle, { color: "crimson", marginTop: 12 }]}>
+                  {detailError}
+                </Text>
+              ) : detailTeam ? (
+                <>
+                  <Text style={[styles.modalSubtitle, { marginTop: 8 }]}>
+                    {fmtRange(
+                      detailTeam.challenge_start_at,
+                      detailTeam.challenge_end_at
+                    )}
+                  </Text>
+                  <Text style={{ marginTop: 8 }}>
+                    총 베팅 코인: {detailTeam.bet_coins}
+                  </Text>
+                  <Text style={{ marginTop: 4 }}>
+                    참여 인원: {detailTeam.teammates?.length ?? 0}명
+                  </Text>
+
+                  <Text style={{ marginTop: 14, fontWeight: "700" }}>
+                    참여자 목록
+                  </Text>
+
+                  <FlatList
+                    data={detailMembers}
+                    keyExtractor={(m) => m.userUid}
+                    style={{ marginTop: 8, maxHeight: 220 }}
+                    renderItem={({ item }) => (
+                      <View style={{ paddingVertical: 6 }}>
+                        <Text style={{ fontWeight: "600" }}>
+                          {item.name} ({item.email})
+                        </Text>
+                        <Text style={{ fontSize: 12, color: "#666" }}>
+                          베팅: {item.coin} · 계좌: {item.account_number}
+                        </Text>
+                      </View>
+                    )}
+                    ListEmptyComponent={
+                      <Text style={{ marginTop: 4 }}>참여자가 없습니다.</Text>
+                    }
+                  />
+                </>
+              ) : (
+                <Text style={[styles.modalSubtitle, { marginTop: 12 }]}>
+                  방 정보를 찾을 수 없습니다.
+                </Text>
+              )}
+
+              <View style={[styles.modalActions, { marginTop: 18 }]}>
+                <Pressable
+                  style={[styles.btn, styles.btnGhost]}
+                  onPress={() => {
+                    setDetailOpen(false);
+                    setDetailTeam(null);
+                    setDetailMembers([]);
+                    setDetailError(null);
+                  }}
+                >
+                  <Text style={[styles.btnText, { color: "#333" }]}>닫기</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+
+        <Modal visible={joinError !== null} transparent animationType="fade">
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalBox}>
+              <Text style={styles.modalTitle}>팀 참가 실패</Text>
+              <Text style={[styles.modalSubtitle, { marginTop: 12 }]}>
+                {joinError}
+              </Text>
+
+              <View
+                style={[
+                  styles.modalActions,
+                  { justifyContent: "center", marginTop: 18 },
+                ]}
+              >
+                <Pressable
+                  style={[styles.btn, styles.btnPrimary]}
+                  onPress={() => setJoinError(null)}
+                >
+                  <Text style={[styles.btnText, { color: "white" }]}>확인</Text>
                 </Pressable>
               </View>
             </View>
